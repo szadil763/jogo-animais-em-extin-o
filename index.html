@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Animais em Extinção</title>
+
+<style>
+*{
+margin:0;
+padding:0;
+box-sizing:border-box;
+font-family:Arial,sans-serif;
+}
+
+body{
+overflow:hidden;
+background:#111;
+}
+
+#menu,#cutscene{
+position:absolute;
+width:100%;
+height:100%;
+display:flex;
+flex-direction:column;
+justify-content:center;
+align-items:center;
+color:white;
+z-index:10;
+}
+
+#menu{
+background:linear-gradient(#53b84f,#214f21);
+}
+
+h1{
+font-size:60px;
+text-shadow:4px 4px black;
+margin-bottom:30px;
+}
+
+button{
+padding:18px 40px;
+font-size:28px;
+border:none;
+border-radius:15px;
+cursor:pointer;
+background:#ffd600;
+font-weight:bold;
+}
+
+#dialog{
+font-size:32px;
+text-align:center;
+max-width:900px;
+padding:20px;
+}
+
+canvas{
+display:none;
+background:linear-gradient(#83d6ff,#dff7ff);
+}
+</style>
+</head>
+<body>
+
+<div id="menu">
+<h1>🐦 ANIMAIS EM EXTINÇÃO</h1>
+<button id="startBtn">COMEÇAR</button>
+</div>
+
+<div id="cutscene" style="display:none;">
+<div id="dialog"></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+
+const menu=document.getElementById("menu");
+const cutscene=document.getElementById("cutscene");
+const dialog=document.getElementById("dialog");
+const startBtn=document.getElementById("startBtn");
+
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
+
+const keys={};
+
+document.addEventListener("keydown",e=>{
+keys[e.key.toLowerCase()]=true;
+
+if(e.code==="Space"){
+attack();
+}
+});
+
+document.addEventListener("keyup",e=>{
+keys[e.key.toLowerCase()]=false;
+});
+
+function wait(ms){
+return new Promise(r=>setTimeout(r,ms));
+}
+
+startBtn.onclick=async()=>{
+
+menu.style.display="none";
+cutscene.style.display="flex";
+
+dialog.innerHTML=
+"🦜 Um Guarda Florestal protege uma Arara ameaçada de extinção.";
+
+await wait(3000);
+
+document.body.style.background="black";
+
+await wait(1200);
+
+document.body.style.background="#111";
+
+dialog.innerHTML=
+"🏹 Caçadores invadem a floresta e roubam a Arara. O Guarda parte para salvá-la!";
+
+await wait(3500);
+
+cutscene.style.display="none";
+
+canvas.style.display="block";
+
+startGame();
+};
+
+let camera=0;
+
+let player={
+x:100,
+y:400,
+w:45,
+h:70,
+vx:0,
+vy:0,
+life:20,
+damage:6,
+ground:false
+};
+
+let hunters=[
+{
+x:600,
+y:420,
+w:45,
+h:60,
+life:12,
+maxLife:12,
+damage:3
+},
+{
+x:1200,
+y:420,
+w:45,
+h:60,
+life:12,
+maxLife:12,
+damage:3
+}
+];
+
+let boss={
+x:2000,
+y:350,
+w:120,
+h:150,
+life:15,
+maxLife:15,
+damage:5,
+alive:true
+};
+
+function attack(){
+
+hunters.forEach(h=>{
+
+if(h.life>0){
+
+if(Math.abs(player.x-h.x)<80){
+h.life-=player.damage;
+}
+}
+});
+
+if(boss.alive && Math.abs(player.x-boss.x)<120){
+boss.life-=player.damage;
+
+if(boss.life<=0){
+boss.alive=false;
+}
+}
+}
+
+function collide(a,b){
+
+return (
+a.x<b.x+b.w &&
+a.x+a.w>b.x &&
+a.y<b.y+b.h &&
+a.y+a.h>b.y
+);
+
+}
+
+function update(){
+
+if(keys["a"]){
+player.vx=-5;
+}
+else if(keys["d"]){
+player.vx=5;
+}
+else{
+player.vx=0;
+}
+
+if(keys["w"] && player.ground){
+player.vy=-14;
+player.ground=false;
+}
+
+player.vy+=0.7;
+
+player.x+=player.vx;
+player.y+=player.vy;
+
+if(player.y>420){
+player.y=420;
+player.vy=0;
+player.ground=true;
+}
+
+hunters.forEach(h=>{
+
+if(h.life<=0) return;
+
+if(h.x>player.x) h.x-=1;
+if(h.x<player.x) h.x+=1;
+
+if(collide(player,h)){
+player.life-=0.03*h.damage;
+}
+});
+
+if(boss.alive){
+
+if(boss.x>player.x){
+boss.x-=0.8;
+}
+
+if(boss.x<player.x){
+boss.x+=0.8;
+}
+
+if(collide(player,boss)){
+player.life-=0.05*boss.damage;
+}
+}
+
+camera=player.x-250;
+
+if(player.life<=0){
+
+alert("GAME OVER");
+
+location.reload();
+
+}
+
+if(!boss.alive && player.x>2200){
+
+alert("VOCÊ SALVOU A ARARA!");
+
+location.reload();
+
+}
+}
+
+function drawLifeBar(x,y,w,h,current,max){
+
+ctx.fillStyle="red";
+ctx.fillRect(x,y,w,h);
+
+ctx.fillStyle="lime";
+ctx.fillRect(x,y,w*(current/max),h);
+
+ctx.strokeStyle="black";
+ctx.strokeRect(x,y,w,h);
+}
+
+function draw(){
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ctx.save();
+ctx.translate(-camera,0);
+
+for(let i=-10;i<50;i++){
+
+ctx.fillStyle="#5d4037";
+ctx.fillRect(i*180,300,50,180);
+
+ctx.fillStyle="#2e7d32";
+ctx.fillRect(i*180-25,230,100,90);
+}
+
+ctx.fillStyle="#7cb342";
+ctx.fillRect(-1000,490,5000,300);
+
+ctx.fillStyle="#1565c0";
+ctx.fillRect(player.x,player.y,player.w,player.h);
+
+ctx.fillStyle="white";
+ctx.fillText("Guarda",player.x-5,player.y-10);
+
+hunters.forEach(h=>{
+
+if(h.life<=0) return;
+
+ctx.fillStyle="#6d4c41";
+ctx.fillRect(h.x,h.y,h.w,h.h);
+
+drawLifeBar(h.x,h.y-15,50,6,h.life,h.maxLife);
+});
+
+if(boss.alive){
+
+ctx.fillStyle="#111";
+ctx.fillRect(boss.x,boss.y,boss.w,boss.h);
+
+drawLifeBar(
+boss.x,
+boss.y-20,
+100,
+10,
+boss.life,
+boss.maxLife
+);
+
+ctx.fillStyle="white";
+ctx.fillText("CHEFE",boss.x+25,boss.y-30);
+}
+
+ctx.fillStyle="yellow";
+ctx.fillRect(2300,380,40,60);
+
+ctx.restore();
+
+drawLifeBar(
+20,
+20,
+250,
+25,
+player.life,
+20
+);
+
+ctx.fillStyle="white";
+ctx.font="20px Arial";
+ctx.fillText("Vida do Guarda: "+Math.floor(player.life),25,65);
+
+ctx.fillText("A = Esquerda",20,95);
+ctx.fillText("D = Direita",20,120);
+ctx.fillText("W = Pular",20,145);
+ctx.fillText("ESPAÇO = Atacar",20,170);
+}
+
+function loop(){
+
+update();
+draw();
+
+requestAnimationFrame(loop);
+}
+
+function startGame(){
+loop();
+}
+
+</script>
+
+</body>
+</html>
