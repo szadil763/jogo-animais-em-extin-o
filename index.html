@@ -1,394 +1,330 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Animais em Extinção</title>
-
+<meta name="claude:viewport-fit-sides" content="cover">
 <style>
-*{
-margin:0;
-padding:0;
-box-sizing:border-box;
-font-family:Arial,sans-serif;
+/* Tela única: jogo em canvas ocupando a tela, menus sobrepostos. Visual fixo (floresta), sem tema escuro/claro. */
+:root{
+--sky-top:#83d6ff;
+--sky-bottom:#dff7ff;
+--forest:#53b84f;
+--forest-dark:#214f21;
+--gold:#ffd600;
+--ink:#111;
+--paper:#fff;
+color-scheme:dark;
 }
+*{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif;}
+html,body{height:100%;}
+[hidden]{display:none!important;}
+body{overflow:hidden;background:var(--ink);color:var(--paper);touch-action:none;user-select:none;-webkit-user-select:none;}
 
-body{
-overflow:hidden;
-background:#111;
+.screen{
+position:fixed;inset:0;
+display:flex;flex-direction:column;justify-content:center;align-items:center;gap:24px;
+text-align:center;z-index:10;
+padding-left:max(16px,env(safe-area-inset-left,0px));
+padding-right:max(16px,env(safe-area-inset-right,0px));
+padding-block:env(safe-area-inset-top,0px) env(safe-area-inset-bottom,0px);
 }
-
-#menu,#cutscene{
-position:absolute;
-width:100%;
-height:100%;
-display:flex;
-flex-direction:column;
-justify-content:center;
-align-items:center;
-color:white;
-z-index:10;
-}
-
-#menu{
-background:linear-gradient(#53b84f,#214f21);
-}
-
-h1{
-font-size:60px;
-text-shadow:4px 4px black;
-margin-bottom:30px;
-}
-
+#menu{background:linear-gradient(var(--forest),var(--forest-dark));}
+#cutscene{background:var(--ink);transition:background .4s;}
+#endScreen{background:rgba(0,0,0,.75);}
+h1{font-size:clamp(32px,8vw,60px);text-shadow:4px 4px var(--ink);text-wrap:balance;}
+.hint{font-size:clamp(14px,3.5vw,18px);opacity:.9;max-width:36em;line-height:1.5;}
 button{
-padding:18px 40px;
-font-size:28px;
-border:none;
-border-radius:15px;
-cursor:pointer;
-background:#ffd600;
-font-weight:bold;
+padding:16px 36px;font-size:clamp(20px,5vw,28px);border:none;border-radius:15px;cursor:pointer;
+background:var(--gold);color:var(--ink);font-weight:bold;
 }
+button:focus-visible{outline:4px solid var(--paper);outline-offset:3px;}
+#dialog{font-size:clamp(20px,5vw,32px);max-width:900px;line-height:1.4;}
+#endTitle{font-size:clamp(30px,8vw,56px);text-shadow:4px 4px var(--ink);}
 
-#dialog{
-font-size:32px;
-text-align:center;
-max-width:900px;
-padding:20px;
-}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;background:linear-gradient(var(--sky-top),var(--sky-bottom));}
 
-canvas{
-display:none;
-background:linear-gradient(#83d6ff,#dff7ff);
+#touch{
+position:fixed;left:0;right:0;bottom:0;z-index:5;
+display:none;justify-content:space-between;align-items:flex-end;
+padding-left:max(16px,env(safe-area-inset-left,0px));
+padding-right:max(16px,env(safe-area-inset-right,0px));
+padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
+pointer-events:none;
 }
+#touch .group{display:flex;gap:12px;pointer-events:auto;}
+#touch button{
+width:68px;height:68px;padding:0;border-radius:50%;font-size:28px;
+background:rgba(255,255,255,.35);color:var(--ink);border:2px solid rgba(0,0,0,.35);
+}
+#touch button.on{background:rgba(255,214,0,.85);}
+@media (pointer:coarse){ body.playing #touch{display:flex;} }
 </style>
-</head>
-<body>
+</head><body>
 
-<div id="menu">
+<div id="menu" class="screen">
 <h1>🐦 ANIMAIS EM EXTINÇÃO</h1>
 <button id="startBtn">COMEÇAR</button>
+<p class="hint">A / ← = Esquerda · D / → = Direita · W / ↑ = Pular · ESPAÇO = Atacar<br>No celular, use os botões na tela.</p>
 </div>
 
-<div id="cutscene" style="display:none;">
+<div id="cutscene" class="screen" hidden>
 <div id="dialog"></div>
+</div>
+
+<div id="endScreen" class="screen" hidden>
+<div id="endTitle"></div>
+<button id="restartBtn">JOGAR DE NOVO</button>
 </div>
 
 <canvas id="game"></canvas>
 
-<script>
+<div id="touch">
+<div class="group">
+<button data-key="a" aria-label="Esquerda">◀</button>
+<button data-key="d" aria-label="Direita">▶</button>
+</div>
+<div class="group">
+<button data-key="w" aria-label="Pular">⤒</button>
+<button data-key="attack" aria-label="Atacar">⚔</button>
+</div>
+</div>
 
+<script>
 const menu=document.getElementById("menu");
 const cutscene=document.getElementById("cutscene");
 const dialog=document.getElementById("dialog");
-const startBtn=document.getElementById("startBtn");
-
+const endScreen=document.getElementById("endScreen");
+const endTitle=document.getElementById("endTitle");
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
 
-canvas.width=window.innerWidth;
-canvas.height=window.innerHeight;
+// Mundo lógico com 600px de altura, escalado para caber na tela.
+const WORLD_H=600;
+const GROUND=490;
+let scale=1,viewW=800;
+
+function resize(){
+const dpr=window.devicePixelRatio||1;
+canvas.width=Math.floor(innerWidth*dpr);
+canvas.height=Math.floor(innerHeight*dpr);
+scale=canvas.height/WORLD_H;
+viewW=canvas.width/scale;
+}
+addEventListener("resize",resize);
+resize();
 
 const keys={};
+const KEYMAP={arrowleft:"a",arrowright:"d",arrowup:"w"};
+let state="menu";
 
 document.addEventListener("keydown",e=>{
-keys[e.key.toLowerCase()]=true;
-
+const k=KEYMAP[e.key.toLowerCase()]||e.key.toLowerCase();
+keys[k]=true;
 if(e.code==="Space"){
-attack();
+e.preventDefault();
+if(!e.repeat) attack();
 }
 });
-
 document.addEventListener("keyup",e=>{
-keys[e.key.toLowerCase()]=false;
+const k=KEYMAP[e.key.toLowerCase()]||e.key.toLowerCase();
+keys[k]=false;
 });
 
-function wait(ms){
-return new Promise(r=>setTimeout(r,ms));
-}
+document.querySelectorAll("#touch button").forEach(b=>{
+const k=b.dataset.key;
+const down=e=>{e.preventDefault();b.classList.add("on");if(k==="attack")attack();else keys[k]=true;};
+const up=e=>{e.preventDefault();b.classList.remove("on");if(k!=="attack")keys[k]=false;};
+b.addEventListener("pointerdown",down);
+b.addEventListener("pointerup",up);
+b.addEventListener("pointercancel",up);
+b.addEventListener("pointerleave",up);
+});
 
-startBtn.onclick=async()=>{
+function wait(ms){return new Promise(r=>setTimeout(r,ms));}
 
-menu.style.display="none";
-cutscene.style.display="flex";
-
-dialog.innerHTML=
-"🦜 Um Guarda Florestal protege uma Arara ameaçada de extinção.";
-
+document.getElementById("startBtn").onclick=async()=>{
+menu.hidden=true;
+cutscene.hidden=false;
+dialog.textContent="🦜 Um Guarda Florestal protege uma Arara ameaçada de extinção.";
 await wait(3000);
-
-document.body.style.background="black";
-
+cutscene.style.background="#000";
+dialog.textContent="";
 await wait(1200);
-
-document.body.style.background="#111";
-
-dialog.innerHTML=
-"🏹 Caçadores invadem a floresta e roubam a Arara. O Guarda parte para salvá-la!";
-
+cutscene.style.background="";
+dialog.textContent="🏹 Caçadores invadem a floresta e roubam a Arara. O Guarda parte para salvá-la!";
 await wait(3500);
-
-cutscene.style.display="none";
-
-canvas.style.display="block";
-
+cutscene.hidden=true;
 startGame();
 };
 
-let camera=0;
-
-let player={
-x:100,
-y:400,
-w:45,
-h:70,
-vx:0,
-vy:0,
-life:20,
-damage:6,
-ground:false
+document.getElementById("restartBtn").onclick=()=>{
+endScreen.hidden=true;
+startGame();
 };
 
-let hunters=[
-{
-x:600,
-y:420,
-w:45,
-h:60,
-life:12,
-maxLife:12,
-damage:3
-},
-{
-x:1200,
-y:420,
-w:45,
-h:60,
-life:12,
-maxLife:12,
-damage:3
-}
+let camera,player,hunters,boss,cage,lastAttack=0,attackFx=0;
+
+function reset(){
+camera=0;
+player={x:100,y:GROUND-70,w:45,h:70,vx:0,vy:0,life:20,damage:6,ground:false,face:1,hurt:0};
+hunters=[
+{x:600,y:GROUND-60,w:45,h:60,life:12,maxLife:12,damage:3},
+{x:1200,y:GROUND-60,w:45,h:60,life:12,maxLife:12,damage:3}
 ];
-
-let boss={
-x:2000,
-y:350,
-w:120,
-h:150,
-life:15,
-maxLife:15,
-damage:5,
-alive:true
-};
+boss={x:2000,y:GROUND-150,w:120,h:150,life:30,maxLife:30,damage:5,alive:true};
+cage={x:2350,y:GROUND-80,w:60,h:80};
+}
 
 function attack(){
+if(state!=="play") return;
+const now=performance.now();
+if(now-lastAttack<300) return; // tempo entre golpes
+lastAttack=now;
+attackFx=10;
 
+// área do golpe à frente do guarda
+const hit={
+x:player.face>0?player.x+player.w-10:player.x-60,
+y:player.y,w:70,h:player.h
+};
 hunters.forEach(h=>{
-
-if(h.life>0){
-
-if(Math.abs(player.x-h.x)<80){
+if(h.life>0 && collide(hit,h)){
 h.life-=player.damage;
-}
+h.x+=player.face*30;
 }
 });
-
-if(boss.alive && Math.abs(player.x-boss.x)<120){
+if(boss.alive && collide(hit,boss)){
 boss.life-=player.damage;
-
-if(boss.life<=0){
-boss.alive=false;
-}
+boss.x+=player.face*20;
+if(boss.life<=0) boss.alive=false;
 }
 }
 
 function collide(a,b){
-
-return (
-a.x<b.x+b.w &&
-a.x+a.w>b.x &&
-a.y<b.y+b.h &&
-a.y+a.h>b.y
-);
-
+return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y;
 }
 
 function update(){
+if(keys["a"]){player.vx=-5;player.face=-1;}
+else if(keys["d"]){player.vx=5;player.face=1;}
+else player.vx=0;
 
-if(keys["a"]){
-player.vx=-5;
-}
-else if(keys["d"]){
-player.vx=5;
-}
-else{
-player.vx=0;
-}
-
-if(keys["w"] && player.ground){
-player.vy=-14;
-player.ground=false;
-}
+if(keys["w"] && player.ground){player.vy=-14;player.ground=false;}
 
 player.vy+=0.7;
-
 player.x+=player.vx;
 player.y+=player.vy;
+if(player.x<-200) player.x=-200;
 
-if(player.y>420){
-player.y=420;
+if(player.y+player.h>GROUND){
+player.y=GROUND-player.h;
 player.vy=0;
 player.ground=true;
 }
 
+let touching=false;
 hunters.forEach(h=>{
-
 if(h.life<=0) return;
-
 if(h.x>player.x) h.x-=1;
 if(h.x<player.x) h.x+=1;
-
-if(collide(player,h)){
-player.life-=0.03*h.damage;
-}
+if(collide(player,h)){player.life-=0.03*h.damage;touching=true;}
 });
 
 if(boss.alive){
+if(boss.x>player.x) boss.x-=0.8;
+if(boss.x<player.x) boss.x+=0.8;
+if(collide(player,boss)){player.life-=0.05*boss.damage;touching=true;}
+}
+player.hurt=touching?player.hurt+1:0;
+if(attackFx>0) attackFx--;
 
-if(boss.x>player.x){
-boss.x-=0.8;
+camera=player.x-Math.min(250,viewW*0.3);
+
+if(player.life<=0) end("GAME OVER 💀");
+else if(!boss.alive && collide(player,cage)) end("🦜 VOCÊ SALVOU A ARARA!");
 }
 
-if(boss.x<player.x){
-boss.x+=0.8;
-}
-
-if(collide(player,boss)){
-player.life-=0.05*boss.damage;
-}
-}
-
-camera=player.x-250;
-
-if(player.life<=0){
-
-alert("GAME OVER");
-
-location.reload();
-
-}
-
-if(!boss.alive && player.x>2200){
-
-alert("VOCÊ SALVOU A ARARA!");
-
-location.reload();
-
-}
+function end(msg){
+state="end";
+document.body.classList.remove("playing");
+for(const k in keys) keys[k]=false;
+endTitle.textContent=msg;
+endScreen.hidden=false;
 }
 
 function drawLifeBar(x,y,w,h,current,max){
+ctx.fillStyle="red";ctx.fillRect(x,y,w,h);
+ctx.fillStyle="lime";ctx.fillRect(x,y,w*Math.max(0,current)/max,h);
+ctx.strokeStyle="black";ctx.strokeRect(x,y,w,h);
+}
 
-ctx.fillStyle="red";
-ctx.fillRect(x,y,w,h);
-
-ctx.fillStyle="lime";
-ctx.fillRect(x,y,w*(current/max),h);
-
-ctx.strokeStyle="black";
-ctx.strokeRect(x,y,w,h);
+function drawArara(x,y){
+ctx.fillStyle="#e53935";ctx.beginPath();ctx.ellipse(x+30,y+45,14,20,0,0,Math.PI*2);ctx.fill();
+ctx.fillStyle="#1e88e5";ctx.beginPath();ctx.ellipse(x+22,y+48,7,15,0.3,0,Math.PI*2);ctx.fill();
+ctx.fillStyle="#fdd835";ctx.fillRect(x+27,y+62,6,14);
+ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(x+34,y+32,4,0,Math.PI*2);ctx.fill();
+ctx.fillStyle="#000";ctx.beginPath();ctx.arc(x+35,y+32,2,0,Math.PI*2);ctx.fill();
 }
 
 function draw(){
-
+ctx.setTransform(1,0,0,1,0,0);
 ctx.clearRect(0,0,canvas.width,canvas.height);
-
-ctx.save();
-ctx.translate(-camera,0);
+ctx.setTransform(scale,0,0,scale,-camera*scale,0);
+ctx.font="16px Arial";
 
 for(let i=-10;i<50;i++){
-
-ctx.fillStyle="#5d4037";
-ctx.fillRect(i*180,300,50,180);
-
-ctx.fillStyle="#2e7d32";
-ctx.fillRect(i*180-25,230,100,90);
+ctx.fillStyle="#5d4037";ctx.fillRect(i*180,300,50,GROUND-300);
+ctx.fillStyle="#2e7d32";ctx.fillRect(i*180-25,230,100,90);
 }
+ctx.fillStyle="#7cb342";ctx.fillRect(-1000,GROUND,6000,WORLD_H);
 
-ctx.fillStyle="#7cb342";
-ctx.fillRect(-1000,490,5000,300);
+// arara na gaiola
+drawArara(cage.x,cage.y);
+ctx.strokeStyle=boss.alive?"#555":"#bbb";ctx.lineWidth=3;
+ctx.strokeRect(cage.x,cage.y,cage.w,cage.h);
+for(let i=1;i<5;i++){ctx.beginPath();ctx.moveTo(cage.x+i*12,cage.y);ctx.lineTo(cage.x+i*12,cage.y+cage.h);ctx.stroke();}
+ctx.lineWidth=1;
+ctx.fillStyle="#000";
+ctx.fillText(boss.alive?"Arara presa":"Toque na gaiola!",cage.x-20,cage.y-10);
 
-ctx.fillStyle="#1565c0";
+// guarda
+ctx.fillStyle=player.hurt%10<5?"#1565c0":"#ef5350";
 ctx.fillRect(player.x,player.y,player.w,player.h);
-
-ctx.fillStyle="white";
-ctx.fillText("Guarda",player.x-5,player.y-10);
+ctx.fillStyle="#2e7d32";ctx.fillRect(player.x-4,player.y,player.w+8,10);
+if(attackFx>0){
+ctx.fillStyle="rgba(255,214,0,.7)";
+ctx.fillRect(player.face>0?player.x+player.w:player.x-50,player.y+25,50,12);
+}
+ctx.fillStyle="#000";ctx.fillText("Guarda",player.x-5,player.y-10);
 
 hunters.forEach(h=>{
-
 if(h.life<=0) return;
-
-ctx.fillStyle="#6d4c41";
-ctx.fillRect(h.x,h.y,h.w,h.h);
-
+ctx.fillStyle="#6d4c41";ctx.fillRect(h.x,h.y,h.w,h.h);
 drawLifeBar(h.x,h.y-15,50,6,h.life,h.maxLife);
 });
 
 if(boss.alive){
-
-ctx.fillStyle="#111";
-ctx.fillRect(boss.x,boss.y,boss.w,boss.h);
-
-drawLifeBar(
-boss.x,
-boss.y-20,
-100,
-10,
-boss.life,
-boss.maxLife
-);
-
-ctx.fillStyle="white";
-ctx.fillText("CHEFE",boss.x+25,boss.y-30);
+ctx.fillStyle="#111";ctx.fillRect(boss.x,boss.y,boss.w,boss.h);
+drawLifeBar(boss.x,boss.y-20,100,10,boss.life,boss.maxLife);
+ctx.fillStyle="#000";ctx.fillText("CHEFE",boss.x+35,boss.y-30);
 }
 
-ctx.fillStyle="yellow";
-ctx.fillRect(2300,380,40,60);
-
-ctx.restore();
-
-drawLifeBar(
-20,
-20,
-250,
-25,
-player.life,
-20
-);
-
-ctx.fillStyle="white";
-ctx.font="20px Arial";
-ctx.fillText("Vida do Guarda: "+Math.floor(player.life),25,65);
-
-ctx.fillText("A = Esquerda",20,95);
-ctx.fillText("D = Direita",20,120);
-ctx.fillText("W = Pular",20,145);
-ctx.fillText("ESPAÇO = Atacar",20,170);
+// HUD
+ctx.setTransform(scale,0,0,scale,0,0);
+drawLifeBar(20,20,250,25,player.life,20);
+ctx.fillStyle="#000";ctx.font="20px Arial";
+ctx.fillText("Vida do Guarda: "+Math.max(0,Math.floor(player.life)),25,70);
 }
 
 function loop(){
-
-update();
-draw();
-
+if(state==="play"){update();draw();}
 requestAnimationFrame(loop);
 }
 
 function startGame(){
-loop();
+reset();
+state="play";
+document.body.classList.add("playing");
 }
 
+requestAnimationFrame(loop);
 </script>
-
-</body>
-</html>
+</body></html>

@@ -15,3 +15,9 @@ ESPAÇO = Atacar
 ## Objetivo
 
 Resgatar a Arara capturada pelos caçadores e derrotar o chefe final.
+
+Também funciona com as setas (← → ↑). No celular aparecem botões na tela.
+
+## Como jogar
+
+Abra o arquivo `index.html` em qualquer navegador (Chrome, Edge, Firefox, Safari).
